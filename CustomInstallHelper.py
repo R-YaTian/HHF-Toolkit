@@ -16,7 +16,7 @@ from sys import exit
 from threading import Thread
 from queue import Queue, Empty
 from subprocess import Popen
-from distutils.dir_util import _path_created
+from distutils.dir_util import _path_created, copy_tree
 from shutil import move, rmtree, copyfile
 import os
 
@@ -51,7 +51,7 @@ class Application(Frame):
         self.pack() 
 
         # First row
-        f1 = LabelFrame(self, text='选择从你机器导出的movable.sed文件', padx=10, pady=10)
+        f1 = LabelFrame(self, text='选择从你机器导出的movable.sed文件', padx=10, pady=5)
 
         self.sedfile = StringVar()
         self.sedfile1 = ""
@@ -59,10 +59,10 @@ class Application(Frame):
 
         Button(f1, text='浏览', command=self.choose_sed).pack(side='left')
 
-        f1.pack(padx=10, pady=10, fill=X)
+        f1.pack(padx=10, pady=5, fill=X)
 
         # Second row
-        f2 = LabelFrame(self, text='选择要安装的CIA文件存放路径', padx=10, pady=20)
+        f2 = LabelFrame(self, text='选择要安装的CIA文件存放路径', padx=10, pady=10)
 
         self.ciapath = StringVar()
         self.ciapath1 = ""
@@ -70,10 +70,15 @@ class Application(Frame):
 
         Button(f2, text='浏览', command=self.choose_cia).pack(side='left')
 
-        f2.pack(padx=10, pady=20, fill=X)
+        f2.pack(padx=10, pady=10, fill=X)
 
         # Third row
         f3 = Frame(self)
+        
+        self.skip = IntVar()
+        self.skip.set(0)
+        self.chk = Checkbutton(f3, text='跳过安装内容', variable=self.skip)
+        self.chk.pack(pady=(0, 5), anchor=W)
 
         self.start_button = Button(f3, text='开始安装', width=13, command=self.setup, state=DISABLED)
         self.start_button.pack(side='left', padx=(0, 5))
@@ -81,7 +86,7 @@ class Application(Frame):
         Button(f3, text='更新库文件', command=self.update, width=13).pack(side='left', padx=(0, 0))
         Button(f3, text='退出', command=root.destroy, width=13).pack(side='left', padx=(5, 0))
 
-        f3.pack(pady=(10, 30))
+        f3.pack(pady=(0, 10))
 
     ################################################################################################
     def choose_sed(self):
@@ -97,6 +102,7 @@ class Application(Frame):
         self.start_button['state'] = (NORMAL if self.sedfile1 != '' else DISABLED)
         self.start_button['state'] = (DISABLED if self.ciapath1 == '' else NORMAL)
     def choose_cia(self):
+        showinfo('注意', '本工具仅用于安装3DS游戏、补丁及DLC，并不能用于安装系统Title、Firm及DSiWare')
         name1 = askdirectory()
         self.ciapath.set(name1)
         if name1 != '':
@@ -239,18 +245,38 @@ class Application(Frame):
             print(e)
             self.log.write('错误: 无法安装库文件')
     def install(self):
-        self.log.write('正在安装CIA...')
+        if self.skip.get() == 1:
+            self.log.write('正在安装CIA(将跳过安装内容)...')
+        else:
+            self.log.write('正在安装CIA...')
         exe = 'custom-install'
         temp = os.path.expanduser('~')
         try:
-            proc = Popen([ exe,'-b', 'boot9.bin', '-m',
-                self.sedfile.get(), '--sd', self.sd_path, '-c', self.ciapath1 ])
+            if self.skip.get() == 1:
+                proc = Popen([ exe,'-b', 'boot9.bin', '-m',
+                    self.sedfile.get(), '--sd', self.sd_path, '--skip-contents', '-c', self.ciapath1 ])
+            else:
+                proc = Popen([ exe,'-b', 'boot9.bin', '-m',
+                    self.sedfile.get(), '--sd', self.sd_path, '-c', self.ciapath1 ])
             ret_val = proc.wait()
             if ret_val == 0:
                 if os.path.exists(temp + "\\" + "3ds"):
                     self.log.write('卸载库文件中...')
                     rmtree(temp + "\\" + "3ds")
                     self.log.write('库文件卸载成功')
+                if os.path.exists(self.sd_path + "\\" + "3ds"):
+                    t3dsx = os.path.join(self.sd_path + "\\" + "3ds")
+                    if not os.path.exists(t3dsx + "\\" + 'custom-install-finalize.3dsx'):
+                        if os.path.exists("3ds" + "\\" + 'custom-install-finalize.3dsx'):
+                            self.log.write('复制CIF中...')
+                            copy_tree('3ds', t3dsx, update=1)
+                            self.log.write('CIF复制成功')
+                else:
+                    if os.path.exists("3ds" + "\\" + 'custom-install-finalize.3dsx'):
+                        os.makedirs(self.sd_path + "\\" + "3ds")
+                        self.log.write('复制CIF中...')
+                        copy_tree('3ds', self.sd_path + "\\" + "3ds")
+                        self.log.write('CIF复制成功')
                 self.log.write('完成!\n请弹出你的3DS存储卡,并装回到你的3DS上\n注意: 你还需要在3DS上完成最后的安装步骤')
             else:
                 self.log.write('错误: 安装过程中发生了错误')
@@ -275,7 +301,7 @@ if windll.shell32.IsUserAnAdmin() == 0:
     root.destroy()
     exit(1)
 
-root.title('CustomInstallHelperV1.0')
+root.title('CustomInstallHelperV1.1')
 # Disable maximizing
 root.resizable(0, 0)
 # Center in window
